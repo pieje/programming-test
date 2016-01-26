@@ -1,0 +1,27 @@
+<!doctype html>
+<html ng-app="search">
+	<head>
+		<!--external js libraries-->
+		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.4.9/angular.min.js"></script>
+		<!--js libraries-->
+		<script type="text/javascript" src="js/map.js"></script>
+		<script type="text/javascript" src="js/app.js"></script>
+		<!-- CSS -->
+		<link rel="stylesheet" type="text/css" href="css/style.css">
+	</head>
+	<body ng-controller="SearchController as searchCtrl">
+		<div class="search-bar">
+			<input class="search-field" type="text" ng-model="searchCtrl.query" ng-change="searchCtrl.changed()" placeholder="Enter a country here">
+			<ul class="search-results" ng-show="searchCtrl.searching">
+				<li ng-repeat="result in searchCtrl.results | orderBy:'-relevance' : reverse | limitTo:4"><a href ng-click="searchCtrl.select(result.name)">{{result.name}}</a></li>
+			</ul>
+		</div>
+
+		<div id="map" ng-show="searchCtrl.country">
+		</div>
+
+		<script async defer
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD02UFAu5UH0W-ea0YJGvit-uNqutnWn94&callback=initMap">
+    </script>
+	</body>
+</html>
