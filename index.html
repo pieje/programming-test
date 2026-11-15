@@ -1,14 +1,241 @@
 <!doctype html>
-<html>
-	<head>
-		<title>Single page template</title> 
-	</head>
-	<body ng-controller="SearchController as searchCtrl">
-		<div data-role="content">
-          <h1>Moo</h1>
-          <p>
-          Rock your body...
-          </p>
-		</div>
-	</body>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Lasse's weg naar huis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1b1430;--ink:#f4ead2;--accent:#ffcc33;--panel:#3d2f63;--shadow:#22193b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Press Start 2P',ui-monospace,Menlo,monospace;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+body{display:flex;flex-direction:column;align-items:center;padding:10px 8px 14px;gap:10px;overflow:hidden;touch-action:none}
+#hud{display:flex;justify-content:space-between;align-items:center;font-size:10px;gap:10px;width:100%;max-width:440px;min-height:28px}
+#hearts{color:#ff5a5a;font-size:12px;letter-spacing:2px}
+#mute{font-family:inherit;font-size:9px;background:var(--panel);color:var(--ink);border:0;padding:8px;min-height:32px;box-shadow:0 3px 0 var(--shadow);touch-action:manipulation}
+#wrap{position:relative;flex:0 0 auto}
+canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;border:4px solid #000;box-shadow:0 0 0 4px var(--panel)}
+#overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:16px;background:rgba(15,10,30,.92);font-size:10px;line-height:1.8;overflow:auto}
+#overlay.hidden{display:none}
+h1{font-size:15px;color:var(--accent);margin:0;line-height:1.5}
+p{margin:0}
+.btn{font-family:inherit;font-size:11px;background:var(--accent);color:#1b1430;border:0;padding:12px 16px;min-height:44px;box-shadow:0 4px 0 #a07a00;cursor:pointer;touch-action:manipulation}
+.btn.alt{background:#8fd3ff;box-shadow:0 4px 0 #3b7fa8}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #a07a00}
+#pad{display:grid;grid-template-columns:repeat(3,68px);grid-template-rows:repeat(2,58px);gap:8px}
+#pad button{font-family:inherit;font-size:20px;background:var(--panel);color:var(--ink);border:0;box-shadow:0 4px 0 var(--shadow);touch-action:manipulation;cursor:pointer}
+#pad button:active{transform:translateY(3px);box-shadow:0 1px 0 var(--shadow)}
+#pad .up{grid-column:2;grid-row:1}#pad .left{grid-column:1;grid-row:2}#pad .down{grid-column:2;grid-row:2}#pad .right{grid-column:3;grid-row:2}
+.frag{border:3px solid var(--accent);padding:14px 12px;background:#000;max-width:300px;display:flex;flex-direction:column;gap:6px}
+.frag .lbl{color:#8fd3ff}
+.frag .big{font-size:34px;color:var(--accent);line-height:1.3}
+.small{font-size:8px;color:#bfb4d9}
+</style>
+</head>
+<body>
+<div id="hud">
+  <span id="lvl">LASSE</span>
+  <span id="hearts" aria-label="levens"></span>
+  <button id="mute" type="button" aria-label="Geluid aan of uit">GELUID AAN</button>
+</div>
+<div id="wrap">
+  <canvas id="c" aria-label="Spelveld"></canvas>
+  <div id="overlay"></div>
+</div>
+<div id="pad">
+  <button class="up" type="button" data-d="up" aria-label="Omhoog">&#9650;</button>
+  <button class="left" type="button" data-d="left" aria-label="Links">&#9664;</button>
+  <button class="down" type="button" data-d="down" aria-label="Omlaag">&#9660;</button>
+  <button class="right" type="button" data-d="right" aria-label="Rechts">&#9654;</button>
+</div>
+<script>
+(function(){
+"use strict";
+const COLS=9, ROWS=13, T=16, W=COLS*T, H=ROWS*T, SPAN=COLS+6;
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+cv.width=W; cv.height=H;
+const ov=document.getElementById('overlay'), hearts=document.getElementById('hearts'), lvlEl=document.getElementById('lvl');
+
+// Fragment (gecodeerd zodat het niet zomaar in de broncode te lezen is)
+const FRAG="eyJ0aWpkIjogIjAxOjQ1IiwgImxldHRlciI6ICJFIiwgInRla3N0IjogIlRodWlzLiBab25kZXIgcG9ydGVmZXVpbGxlLiBab25kZXIgc2xldXRlbC4gV2VsIG1ldCBlZW4ga2x1aXNsYWJlbC4ifQ==";
+function dec(s){return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s),c=>c.charCodeAt(0))));}
+
+const LEVELS=[
+ {name:'GROTE MARKT',intro:'01:30. Lasse vertrekt op de Grote Markt. Ontwijk de duiven en de toeristen.',ground:'kassei',
+  lanes:[{r:10,t:'duif',len:1,n:3,v:1.0},{r:9,t:'toerist',len:2,n:2,v:-0.9},{r:8,t:'duif',len:1,n:4,v:1.3},{r:7,t:'fietstaxi',len:2,n:2,v:-1.3},
+         {r:5,t:'toerist',len:3,n:2,v:0.8},{r:4,t:'duif',len:1,n:3,v:-1.5},{r:3,t:'toerist',len:2,n:2,v:1.1},{r:2,t:'duif',len:1,n:4,v:-1.0}]},
+ {name:'DE BOULEVARD',intro:'01:38. Steps, fietsers en plassen. Natte voeten tellen ook als ongeluk.',ground:'asfalt',
+  lanes:[{r:10,t:'step',len:1,n:2,v:2.0},{r:9,t:'plas',len:1,n:3,v:0},{r:8,t:'fietser',len:1,n:3,v:-1.6},{r:7,t:'bakfiets',len:2,n:2,v:1.2},
+         {r:5,t:'step',len:1,n:3,v:-2.2},{r:4,t:'plas',len:1,n:2,v:0,off:1.5},{r:3,t:'fietser',len:1,n:2,v:1.8},{r:2,t:'bakfiets',len:2,n:2,v:-1.1}]},
+ {name:'TRAMSPOREN',intro:'01:43. Laatste stuk! Pas op voor trams, taxi\'s en de nachtbus.',ground:'sporen',
+  lanes:[{r:10,t:'taxi',len:2,n:2,v:2.0},{r:9,t:'tram',len:4,n:1,v:-1.4},{r:8,t:'step',len:1,n:3,v:1.7},{r:7,t:'nachtbus',len:3,n:1,v:-1.2},
+         {r:5,t:'tram',len:4,n:1,v:1.5},{r:4,t:'taxi',len:2,n:2,v:-2.3},{r:3,t:'nachtbus',len:3,n:1,v:1.0},{r:2,t:'fietser',len:1,n:3,v:-1.6}]}
+];
+const HIT={duif:'Een duif! Lasse schrikt zich een hoedje.',toerist:'Botsing met een selfiestick.',fietstaxi:'Bijna onder de fietstaxi.',step:'Een step zoeft voorbij. Auw.',
+  plas:'Natte voeten! Lasse rilt.',fietser:'Tring tring! Te laat.',bakfiets:'De bakfiets wint.',tram:'Die tram stopt niet voor Lasse.',taxi:'Toeterende taxi!',nachtbus:'De nachtbus was sneller.'};
+const SAFE=[1,6,11];
+
+let state='title', level=0, lanes=[], player={x:4,y:12}, lives=3, inv=0, t=0, easy=false, gameovers=0, msg='', msgT=0, shake=0;
+let sound=true, actx=null;
+
+function beep(f,d,type){ if(!sound) return; try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+  const o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.value=f; g.gain.value=0.05;
+  o.connect(g); g.connect(actx.destination); const n=actx.currentTime; g.gain.exponentialRampToValueAtTime(0.0001,n+d); o.start(n); o.stop(n+d);}catch(e){} }
+function tune(notes){ notes.forEach((f,i)=>setTimeout(()=>beep(f,0.12),i*110)); }
+
+function buildLevel(){
+  const L=LEVELS[level]; lanes=L.lanes.map(l=>{ const items=[]; const sp=SPAN/l.n;
+    for(let i=0;i<l.n;i++){ items.push({x:-3+i*sp+(l.off||0)+(l.v===0?2:Math.random()*0.8), k:i}); }
+    return Object.assign({},l,{items}); });
+  player={x:4,y:12}; inv=0.6;
+}
+function speedMul(){ return easy?0.55:1; }
+
+function move(dx,dy){
+  if(state!=='play') return;
+  const nx=player.x+dx, ny=player.y+dy;
+  if(nx<0||nx>=COLS||ny<0||ny>ROWS-1) return;
+  player.x=nx; player.y=ny; beep(dy<0?520:420,0.05);
+  if(player.y===0) levelDone();
+}
+function hit(type){
+  if(inv>0) return;
+  beep(110,0.3,'sawtooth'); shake=0.3; msg=HIT[type]||'Au!'; msgT=1.8;
+  if(!easy) lives--; updateHud();
+  if(lives<=0){ gameOver(); return; }
+  player={x:4,y:12}; inv=1.2;
+}
+function levelDone(){
+  tune([523,659,784]);
+  if(level===LEVELS.length-1){ win(); return; }
+  state='between';
+  show(`<h1>STRAAT GEHAALD!</h1><p>${LEVELS[level].name} ligt achter Lasse.</p><p>Volgende: ${LEVELS[level+1].name}</p><button class="btn" id="go">VERDER</button>`);
+  btn('go',()=>{ level++; startLevel(); });
+}
+function gameOver(){
+  state='over'; gameovers++;
+  let h=`<h1>LASSE LIGT PLAT</h1><p>Geen levens meer in deze straat.</p><button class="btn" id="retry">OPNIEUW</button>`;
+  if(gameovers>=2 && !easy) h+=`<p class="small">Lukt het niet? Lasse krijgt een sterke koffie:<br>alles gaat trager en je verliest geen levens meer.</p><button class="btn alt" id="easy">MAKKELIJKE MODUS</button>`;
+  show(h);
+  btn('retry',()=>startLevel());
+  btn('easy',()=>{ easy=true; startLevel(); });
+}
+function win(){
+  state='win'; const F=dec(FRAG);
+  try{ localStorage.setItem('lasse_done', easy?'easy':'normal'); }catch(e){}
+  showFrag(F, easy);
+  tune([523,659,784,1047]);
+}
+function showFrag(F, wasEasy){
+  show(`<h1>THUIS!</h1><p>Lasse ploft in zijn bed.<br>Er komt een herinnering terug...</p>
+  <div class="frag"><span class="lbl">GEHEUGENFRAGMENT</span><span>TIJDSTIP ${F.tijd}</span><span class="lbl">LETTER</span><span class="big">${F.letter}</span><span>"${F.tekst}"</span></div>
+  <p>Maak een screenshot en stuur hem naar de organisatoren.</p><p class="small">Modus: ${wasEasy?'makkelijk':'normaal'}</p>`);
+}
+function startLevel(){ lives=3; buildLevel(); state='play'; hide(); updateHud(); msg=LEVELS[level].intro; msgT=3; }
+function show(h){ ov.innerHTML=h; ov.classList.remove('hidden'); }
+function hide(){ ov.classList.add('hidden'); }
+function btn(id,fn){ const b=document.getElementById(id); if(b) b.addEventListener('click',e=>{ e.stopPropagation(); fn(); }); }
+function updateHud(){ lvlEl.textContent=state==='title'?'LASSE':`${level+1}/3 ${LEVELS[level].name}`; hearts.textContent=easy?'KOFFIE':'♥'.repeat(Math.max(0,lives)); }
+
+// ---------- tekenen ----------
+function r(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(Math.round(x),Math.round(y),w,h); }
+function ground(row){
+  const y=row*T, g=LEVELS[level].ground;
+  if(row===0){ r(0,y,W,T,'#24543e'); for(let c=0;c<COLS;c++){ r(c*T+6,y+5,4,7,'#7fd18b'); r(c*T+4,y+7,8,2,'#7fd18b'); }
+    if(level===2){ drawBed(4*T-8,y); } return; }
+  if(SAFE.includes(row)||row===12){ r(0,y,W,T,'#7c7489'); r(0,y,W,1,'#9d95aa'); for(let c=0;c<COLS;c++) r(c*T,y,1,T,'#6a6277'); return; }
+  if(g==='kassei'){ r(0,y,W,T,'#4b4453'); for(let c=0;c<COLS*2;c++){ const ox=(row%2)*4; r(c*8+ox,y+1,6,6,'#5d5566'); r(c*8+4-ox,y+9,6,6,'#5d5566'); } }
+  else if(g==='asfalt'){ r(0,y,W,T,'#34343e'); if(row%2===0) for(let c=0;c<COLS;c++) r(c*T+4,y+7,8,2,'#d8d8d8'); }
+  else { r(0,y,W,T,'#303039'); r(0,y+4,W,2,'#9a9aa6'); r(0,y+11,W,2,'#9a9aa6'); for(let c=0;c<COLS*2;c++) r(c*8+2,y+3,3,10,'#4a3a2c'); r(0,y+4,W,2,'#9a9aa6'); r(0,y+11,W,2,'#9a9aa6'); }
+}
+function drawBed(x,y){ r(x,y+3,32,12,'#7a4a2a'); r(x+2,y+4,28,8,'#f2f2f2'); r(x+3,y+5,8,5,'#ffffff'); r(x+12,y+5,17,6,'#4f7fd1'); r(x,y+1,3,14,'#5a341c'); }
+function person(x,y,shirt,hat){ r(x+5,y+11,2,4,'#2b2b4a'); r(x+9,y+11,2,4,'#2b2b4a'); r(x+4,y+6,8,6,shirt); r(x+5,y+1,6,5,'#f1c27d'); r(x+5,y+0,6,2,hat||'#4a2c17'); }
+function drawItem(type,x,y,len,flip,k){
+  ctx.save();
+  if(flip){ ctx.translate(Math.round(x)*2+len*T,0); ctx.scale(-1,1); }
+  switch(type){
+    case 'duif': r(x+3,y+7,9,5,'#9aa0a8'); r(x+11,y+4,3,4,'#6c7380'); r(x+14,y+5,1,1,'#e0a030'); r(x+10,y+8,2,2,'#4f8f6f'); r(x+1,y+8,3,2,'#7c828c'); r(x+6,y+12,1,2,'#d77'); r(x+9,y+12,1,2,'#d77'); break;
+    case 'toerist': { const cols=['#e67e22','#2ecc71','#e84393','#00a8ff']; for(let i=0;i<len;i++){ person(x+i*T,y,cols[(k+i)%4],'#e0c068'); } r(x+2,y-1,12,2,'#d63031'); r(x+7,y+1,1,5,'#333'); break; }
+    case 'fietstaxi': r(x+2,y+3,18,9,'#16a085'); r(x+3,y+4,16,4,'#a3e4d7'); r(x+20,y+6,6,1,'#333'); person(x+16,y-1,'#f1c40f'); r(x+3,y+12,5,4,'#111'); r(x+15,y+12,5,4,'#111'); r(x+24,y+12,5,4,'#111'); break;
+    case 'step': r(x+2,y+13,12,2,'#888'); r(x+1,y+14,3,2,'#111'); r(x+12,y+14,3,2,'#111'); r(x+12,y+3,1,10,'#bbb'); r(x+10,y+3,4,1,'#bbb'); person(x+3,y-1,'#00b894'); break;
+    case 'fietser': r(x+1,y+11,5,5,'#111'); r(x+10,y+11,5,5,'#111'); r(x+3,y+10,10,1,'#c0392b'); person(x+3,y-2,'#fdcb6e'); break;
+    case 'bakfiets': r(x+2,y+5,14,8,'#8e5a2b'); r(x+3,y+6,12,2,'#b07a45'); r(x+16,y+9,10,1,'#333'); person(x+16,y-2,'#6c5ce7'); r(x+3,y+12,5,4,'#111'); r(x+24,y+12,5,4,'#111'); break;
+    case 'plas': r(x+1,y+5,14,8,'#3e6fb0'); r(x+3,y+4,10,10,'#3e6fb0'); r(x+4,y+6,6,2,'#8ec5ff'); r(x+10,y+9,2,1,'#8ec5ff'); break;
+    case 'tram': { const L=len*T; r(x,y+1,L,13,'#e6e6e6'); r(x,y+11,L,3,'#c0392b'); for(let i=4;i<L-8;i+=9) r(x+i,y+3,6,5,'#5aa0d0'); r(x+L-6,y+2,5,8,'#2d3436'); r(x+L-2,y+9,2,2,'#ffeaa7'); break; }
+    case 'taxi': r(x+1,y+5,30,8,'#f2c230'); r(x+7,y+2,16,4,'#f2c230'); r(x+8,y+3,6,3,'#5aa0d0'); r(x+16,y+3,6,3,'#5aa0d0'); r(x+12,y+0,8,2,'#222'); r(x+4,y+12,6,4,'#111'); r(x+22,y+12,6,4,'#111'); r(x+29,y+7,2,2,'#fff7b0'); break;
+    case 'nachtbus': { const L=len*T; r(x,y+1,L,13,'#2e4a8f'); for(let i=3;i<L-6;i+=8) r(x+i,y+3,6,5,'#ffe066'); r(x+4,y+12,6,4,'#111'); r(x+L-10,y+12,6,4,'#111'); r(x+L-2,y+9,2,2,'#fff7b0'); break; }
+  }
+  ctx.restore();
+}
+function drawLasse(){
+  if(inv>0 && Math.floor(t*12)%2===0) return;
+  const wob=Math.sin(t*3)*1.2, x=player.x*T+wob, y=player.y*T;
+  r(x+5,y+11,2,4,'#1f3a6b'); r(x+9,y+11,2,4,'#1f3a6b'); r(x+4,y+6,8,6,'#e34b4b'); r(x+2,y+7,2,4,'#f1c27d'); r(x+12,y+7,2,4,'#f1c27d');
+  r(x+5,y+1,6,5,'#f1c27d'); r(x+5,y+0,6,2,'#6b3e1e'); r(x+5,y+3,6,1,'#111'); r(x+7,y+3,2,1,'#111');
+}
+function draw(){
+  ctx.save();
+  if(shake>0) ctx.translate((Math.random()-0.5)*3,(Math.random()-0.5)*3);
+  for(let row=0;row<ROWS;row++) ground(row);
+  for(const l of lanes) for(const it of l.items) drawItem(l.t,it.x*T,l.r*T,l.len,l.v<0,it.k);
+  drawLasse();
+  if(msgT>0 && state==='play'){ r(0,0,W,30,'rgba(0,0,0,0.78)'); ctx.fillStyle='#ffcc33'; ctx.font='6px "Press Start 2P", monospace'; ctx.textAlign='center';
+    wrapText(msg,W/2,10,W-10,9); }
+  ctx.restore();
+}
+function wrapText(s,x,y,maxW,lh){ const words=s.split(' '); let line='', yy=y;
+  for(const w of words){ const test=line?line+' '+w:w; if(ctx.measureText(test).width>maxW && line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=test; }
+  ctx.fillText(line,x,yy); }
+
+// ---------- lus ----------
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now; t+=dt;
+  if(state==='play'){
+    for(const l of lanes){ if(!l.v) continue; for(const it of l.items){ it.x+=l.v*speedMul()*dt;
+      if(l.v>0 && it.x>COLS+3) it.x-=SPAN; if(l.v<0 && it.x+l.len< -3) it.x+=SPAN; } }
+    if(inv>0) inv-=dt;
+    const lane=lanes.find(l=>l.r===player.y);
+    if(lane){ const a=player.x+0.2, b=player.x+0.8; for(const it of lane.items){ if(b>it.x+0.1 && a<it.x+lane.len-0.1){ hit(lane.t); break; } } }
+  }
+  if(msgT>0) msgT-=dt; if(shake>0) shake-=dt;
+  draw(); requestAnimationFrame(loop);
+}
+
+// ---------- invoer ----------
+const DIRS={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
+document.querySelectorAll('#pad button').forEach(b=>{ b.addEventListener('pointerdown',e=>{ e.preventDefault(); const d=DIRS[b.dataset.d]; move(d[0],d[1]); }); });
+addEventListener('keydown',e=>{ const m={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',w:'up',s:'down',a:'left',d:'right'}[e.key];
+  if(m){ e.preventDefault(); move(DIRS[m][0],DIRS[m][1]); } });
+let sx=0, sy=0;
+cv.addEventListener('touchstart',e=>{ const p=e.touches[0]; sx=p.clientX; sy=p.clientY; },{passive:true});
+cv.addEventListener('touchend',e=>{ const p=e.changedTouches[0], dx=p.clientX-sx, dy=p.clientY-sy;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<20) return; if(Math.abs(dx)>Math.abs(dy)) move(dx>0?1:-1,0); else move(0,dy>0?1:-1); });
+document.addEventListener('touchmove',e=>{ if(e.target.closest && !e.target.closest('#overlay')) e.preventDefault(); },{passive:false});
+document.getElementById('mute').addEventListener('click',e=>{ sound=!sound; e.currentTarget.textContent=sound?'GELUID AAN':'GELUID UIT'; });
+
+function fit(){
+  const padH=document.getElementById('pad').offsetHeight, hudH=document.getElementById('hud').offsetHeight;
+  const aw=innerWidth-28, ah=innerHeight-padH-hudH-60;
+  const s=Math.max(1,Math.floor(Math.min(aw/W,ah/H)*4)/4);
+  cv.style.width=(W*s)+'px'; cv.style.height=(H*s)+'px';
+}
+addEventListener('resize',fit);
+
+// ---------- start ----------
+function title(){
+  state='title'; level=0; buildLevel(); updateHud();
+  let done=null; try{ done=localStorage.getItem('lasse_done'); }catch(e){}
+  show(`<h1>LASSE'S WEG<br>NAAR HUIS</h1><p>Het is 01:30. Lasse moet naar huis,<br>maar de stad zit vol obstakels.</p>
+  <p>Breng hem veilig over 3 straten.<br>Gebruik de pijltjes of swipe.</p><button class="btn" id="start">START</button>
+  ${done?'<button class="btn alt" id="again">TOON FRAGMENT OPNIEUW</button>':''}`);
+  btn('start',()=>{ beep(660,0.1); startLevel(); });
+  btn('again',()=>showFrag(dec(FRAG), done==='easy'));
+}
+title(); fit(); requestAnimationFrame(loop);
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+})();
+</script>
+</body>
 </html>
